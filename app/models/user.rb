@@ -49,7 +49,9 @@ class User < ActiveRecord::Base
   has_many :user_warnings
   has_many :user_archived_messages, dependent: :destroy
   has_many :email_change_requests, dependent: :destroy
-  has_many :directory_items, dependent: :delete_all
+
+  # see before_destroy
+  has_many :directory_items
   has_many :user_auth_tokens, dependent: :destroy
   has_many :user_auth_token_logs, dependent: :destroy
 
@@ -141,6 +143,12 @@ class User < ActiveRecord::Base
     # we need to bypass the default scope here, which appears not bypassed for :delete_all
     # however :destroy it is bypassed
     PostAction.with_deleted.where(user_id: self.id).delete_all
+
+    # This is a perf optimisation to ensure we hit the index
+    # without this we need to scan a much larger number of rows
+    DirectoryItem.where(user_id: self.id)
+      .where('period_type in (?)', DirectoryItem.period_types.values)
+      .delete_all
   end
 
   # Skip validating email, for example from a particular auth provider plugin
@@ -737,17 +745,19 @@ class User < ActiveRecord::Base
   end
 
   def self.system_avatar_template(username)
+    normalized_username = normalize_username(username)
+
     # TODO it may be worth caching this in a distributed cache, should be benched
     if SiteSetting.external_system_avatars_enabled
       url = SiteSetting.external_system_avatars_url.dup
       url = "#{Discourse::base_uri}#{url}" unless url =~ /^https?:\/\//
-      url.gsub! "{color}", letter_avatar_color(username.downcase)
+      url.gsub! "{color}", letter_avatar_color(normalized_username)
       url.gsub! "{username}", username
-      url.gsub! "{first_letter}", username[0].downcase
+      url.gsub! "{first_letter}", normalized_username.grapheme_clusters.first
       url.gsub! "{hostname}", Discourse.current_hostname
       url
     else
-      "#{Discourse.base_uri}/letter_avatar/#{username.downcase}/{size}/#{LetterAvatar.version}.png"
+      "#{Discourse.base_uri}/letter_avatar/#{normalized_username}/{size}/#{LetterAvatar.version}.png"
     end
   end
 

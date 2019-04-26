@@ -802,7 +802,16 @@ export default Ember.Component.extend({
     let html = clipboard.getData("text/html");
     let handled = false;
 
-    if (plainText) {
+    const { pre, lineVal } = this._getSelected(null, { lineVal: true });
+    const isInlinePasting = pre.match(/[^\n]$/);
+    const isCodeBlock = isInside(pre, /(^|\n)```/g);
+
+    if (
+      plainText &&
+      this.siteSettings.enable_rich_text_paste &&
+      !isInlinePasting &&
+      !isCodeBlock
+    ) {
       plainText = plainText.trim().replace(/\r/g, "");
       const table = this._extractTable(plainText);
       if (table) {
@@ -810,9 +819,6 @@ export default Ember.Component.extend({
         handled = true;
       }
     }
-
-    const { pre, lineVal } = this._getSelected(null, { lineVal: true });
-    const isInlinePasting = pre.match(/[^\n]$/);
 
     if (canPasteHtml && plainText) {
       if (isInlinePasting) {
@@ -822,7 +828,7 @@ export default Ember.Component.extend({
           lineVal.match(/^    /)
         );
       } else {
-        canPasteHtml = !isInside(pre, /(^|\n)```/g);
+        canPasteHtml = !isCodeBlock;
       }
     }
 
